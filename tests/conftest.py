@@ -4,27 +4,29 @@ import pyautogui
 import csv
 from pywinauto.application import Application
 from pywinauto.controls.win32_controls import EditWrapper
-from datetime import datetime
-
+from datetime import datetime, timezone
+import allure
 
 @pytest.fixture(scope="module")
 def app():
     # Start the application
     app = Application(backend='uia').start("D:/CattleXpert/CattleXpert.exe")
     yield app
-    app.kill()  # Ensure the application is closed after all tests
+    # Ensure the application is closed after all tests
+    app.kill()  
 
 @pytest.fixture()
 def take_screenshot():
     def _take_screenshot(file_name):
+
         # Define the screenshot directory relative to the project's root
         screenshot_dir = os.path.join(os.path.dirname(__file__), '..', 'screenshots')
 
         # Create the directory if it doesn't exist
         os.makedirs(screenshot_dir, exist_ok=True)
 
-        # Get the current timestamp
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        # Get the current timestamp with UTC timezone
+        timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
 
         # Add the timestamp to the file name
         file_name_with_timestamp = f"{file_name}_{timestamp}.png"
@@ -35,8 +37,15 @@ def take_screenshot():
         # Take the screenshot and save it to the specified path
         pyautogui.screenshot(screenshot_path)
         print(f"Screenshot saved to {screenshot_path}")
+
+        # Attach screenshot to Allure report
+        with open(screenshot_path, "rb") as image_file:
+            allure.attach(image_file.read(), name=file_name_with_timestamp, attachment_type=allure.attachment_type.PNG)
+        
+        return screenshot_path
         
     return _take_screenshot
+
 @pytest.fixture()
 def login(app, take_screenshot):
     with open('credentials.csv', mode='r') as file:
@@ -60,11 +69,11 @@ def login(app, take_screenshot):
     main_screen = app.window(title_re=".*CattleXpert - J.W. Freund Farms, Inc.*")
     
     if main_screen.exists(timeout=10):
-        print("Login successful.")
+        allure.step("Login successful.")
         take_screenshot("login_success")
         return app
     else:
-        print("Login failed. Taking screenshot.")
+        allure.step("Login failed. Taking screenshot.")
         take_screenshot("login_failure")
         app.kill()
         return None
@@ -76,11 +85,15 @@ def main_screen(login):
     else:
         # If login fails, trigger the error screen handling
         error_screen = login.window(title="Program Error Intercepted", auto_id = "0")
+
         if error_screen.exists():
-            take_screenshot("error_screen.png")
-            print("Error screen detected and screenshot taken.")
-            app.kill()
+
+            take_screenshot("error_screen")
+            allure.step("Error screen detected and screenshot taken.")
+            print("Error screen detected and screenshot taken")
+            login.kill()
             return error_screen
+        
         else:
             pytest.fail("Login failed, and error screen could not be accessed.")
 
